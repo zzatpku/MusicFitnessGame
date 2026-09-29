@@ -293,11 +293,24 @@ export class Highway {
       }
     }
 
-    // lane headers: key cap, muscle, live activation vs coach target
+    // lane headers: key cap, muscle, live activation vs coach target. In body-cue mode each column
+    // starts with the number shown on the body, pointing at the key it stands for.
+    const ky = body ? 44 : hitY + 14;
     for (let i = 0; i < n; i++) {
       const L = this.lanes[i];
       const lx = L.x + L.w / 2;
-      const ky = hitY + 14;
+      if (body) {
+        g.fillStyle = 'rgba(245,248,255,0.95)';
+        roundRect(g, lx - 13, 6, 26, 24, 7);
+        g.fill();
+        g.fillStyle = '#111';
+        g.font = '800 15px "SF Mono", Menlo, monospace';
+        g.textAlign = 'center';
+        g.fillText(String(i + 1), lx, 23);
+        g.fillStyle = 'rgba(200,210,230,0.7)';
+        g.font = '700 9px -apple-system, sans-serif';
+        g.fillText('▼', lx, 40);
+      }
       const kw = Math.min(L.key.length > 1 ? 48 : 40, L.w - 8);
       g.fillStyle = this.down[i] ? `hsl(${L.hue},95%,62%)` : 'rgba(235,240,250,0.92)';
       roundRect(g, lx - kw / 2, ky + (this.down[i] ? 2 : 0), kw, 30, 7);
@@ -330,7 +343,7 @@ export class Highway {
     g.fillStyle = 'rgba(160,175,200,0.55)';
     g.font = '600 10px -apple-system, "PingFang SC", sans-serif';
     g.textAlign = 'center';
-    for (const s of this.stages) g.fillText(s.label, s.x + s.w / 2, hitY + 94);
+    for (const s of this.stages) g.fillText(s.label, s.x + s.w / 2, ky + 80);
 
     if (body) return;
     // judgement + combo

@@ -98,7 +98,7 @@ async function main(): Promise<void> {
     input.setLanes(lanes.length);
     highway.setSong(song.chart, lanes, LANE_KEYS[lanes.length].map(keyLabel), o.cue);
     bodyCues.enabled = o.cue === 'body';
-    bodyCues.keys = LANE_KEYS[lanes.length].map(keyLabel);
+    bodyCues.keys = lanes.map((_, i) => String(i + 1));
     hudRoot.style.setProperty('--hw', `${highway.width}px`);
     stage.setViewShift(o.cue === 'body' ? 0 : highway.width);
     hud.setSong(opts, lanes);
@@ -115,7 +115,7 @@ async function main(): Promise<void> {
     phase = 'ready';
     setMessage(
       opts.cue === 'body'
-        ? '按 空格 开始\n光圈收拢到哪块肌肉就按它的键，快到时会显示键名\n键盘从左到右 = 身体从脚往上'
+        ? `按 空格 开始\n光圈收拢到哪块肌肉就按它的键，快到时圈里会出现数字\n数字 = 左下角从左数第几个键（1 = ${keyLabel(LANE_KEYS[lanes.length][0])}，2 = ${keyLabel(LANE_KEYS[lanes.length][1])} …）`
         : '按 空格 开始\n开始前可以先按键，感受肌肉收紧',
     );
     hud.showMenu(false);
