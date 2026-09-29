@@ -1,0 +1,24 @@
+{
+  "name": "muscle-lab",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "sim": "node scripts/simtest.ts",
+    "playtest": "node scripts/playtest.ts",
+    "charts": "node scripts/charts.ts",
+    "feasibility": "node scripts/feasibility.ts"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}
