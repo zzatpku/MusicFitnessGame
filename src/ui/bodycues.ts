@@ -1,5 +1,5 @@
 import type { Judgement, RhythmGame } from '../game/rhythm.ts';
-import { J_STYLE, hexA } from './highway.ts';
+import { J_STYLE, hexA, roundRect } from './highway.ts';
 
 export interface ScreenPoint {
   x: number;
@@ -15,8 +15,12 @@ export class BodyCues {
   private readonly g: CanvasRenderingContext2D;
   /** Seconds a ring takes to close. */
   lead = 1.0;
+  /** The key name fades in on the target over the last part of the approach (seconds before the hit). */
+  labelLead = 0.6;
   enabled = false;
   message = '';
+  /** Key label per lane. */
+  keys: string[] = [];
   private pops: { lane: number; j: Judgement; t: number; at: ScreenPoint }[] = [];
 
   constructor(parent: HTMLElement) {
@@ -61,12 +65,17 @@ export class BodyCues {
     if (!this.enabled) return;
     const R0 = 56,
       R1 = 12;
+    const label = new Map<number, number>();
 
     if (rg) {
       for (const st of rg.states) {
         const n = st.note;
         const at = anchors[n.lane];
         if (!at || n.t - t > this.lead || n.end < t - 0.2) continue;
+        if ((st.judged === null && t < n.t + 0.14) || (n.hold && st.holding)) {
+          const a = n.hold && st.holding ? 1 : Math.max(0, Math.min(1, (this.labelLead - (n.t - t)) / (0.5 * this.labelLead)));
+          label.set(n.lane, Math.max(label.get(n.lane) ?? 0, a));
+        }
         if (n.hold && st.holding) {
           // a held contraction: filled target with the remaining time as an arc
           const left = Math.max(0, Math.min(1, (n.end - t) / Math.max(0.05, n.end - n.t)));
@@ -104,6 +113,25 @@ export class BodyCues {
         g.shadowBlur = 0;
       }
     }
+
+    // key name on the target, fading in as the ring closes (once per lane)
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    for (const [lane, a] of label) {
+      const at = anchors[lane];
+      const key = this.keys[lane];
+      if (!at || !key || a <= 0.01) continue;
+      g.font = key.length > 1 ? '800 12px -apple-system, "PingFang SC", sans-serif' : '800 15px "SF Mono", Menlo, monospace';
+      const w = Math.max(24, g.measureText(key).width + 12);
+      g.globalAlpha = a;
+      g.fillStyle = 'rgba(245,248,255,0.95)';
+      roundRect(g, at.x - w / 2, at.y - 12, w, 24, 7);
+      g.fill();
+      g.fillStyle = '#111';
+      g.fillText(key, at.x, at.y + 1);
+      g.globalAlpha = 1;
+    }
+    g.textBaseline = 'alphabetic';
 
     // judgement pop-ups at the muscle
     g.textAlign = 'center';
