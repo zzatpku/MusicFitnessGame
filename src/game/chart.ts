@@ -1,5 +1,6 @@
 import { MI, type MuscleId } from '../sim/muscles.ts';
 import type { Difficulty } from './exercises.ts';
+import { handOf } from './input.ts';
 
 /** One falling note: "this muscle, fire (a bit more) now". */
 export interface Note {
@@ -53,11 +54,6 @@ const LIMITS: Record<Difficulty, { perHand: number; events: number; holds: numbe
   expert: { perHand: 2, events: 4, holds: 2, sixteenths: true, high: 0.3 },
 };
 
-/** Which hand plays a lane: 0 = left, 1 = right, 2 = thumbs (the middle lane of nine is the space bar). */
-function handOf(lane: number, n: number): number {
-  if (n === 9) return lane < 4 ? 0 : lane === 4 ? 2 : 1;
-  return lane < Math.ceil(n / 2) ? 0 : 1;
-}
 /** Activation at which a muscle gets notes, and below which an episode of activity ends. */
 const ON = 0.12;
 const OFF = 0.07;

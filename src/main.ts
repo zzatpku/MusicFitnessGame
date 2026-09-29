@@ -6,6 +6,7 @@ import { Overlays } from './render/overlays.ts';
 import { DustParticles } from './render/particles.ts';
 import { Hud, type StartOptions } from './ui/hud.ts';
 import { Highway, SHORT_NAME } from './ui/highway.ts';
+import { BodyCues, type ScreenPoint } from './ui/bodycues.ts';
 import { Input, LANE_KEYS, keyLabel } from './game/input.ts';
 import { LiftSession, type RepResult } from './game/session.ts';
 import { buildSong, COUNT_IN_BEATS, OUTRO_BEATS, type Song } from './game/song.ts';
@@ -45,7 +46,7 @@ async function main(): Promise<void> {
   const sfx = new Sfx(audio);
 
   let phase: Phase = 'menu';
-  let opts: StartOptions = { ex: 'squat', weight: 60, bpm: 84, diff: 'easy', reps: 5, auto: false };
+  let opts: StartOptions = { ex: 'squat', weight: 60, bpm: 84, diff: 'easy', reps: 5, auto: false, cue: 'lanes' };
   let song: Song | null = null;
   let rg: RhythmGame | null = null;
   let lanes: MuscleId[] = [];
@@ -56,6 +57,14 @@ async function main(): Promise<void> {
   const cams: CameraPreset[] = ['orbit', 'side', 'front', 'back'];
   const hitGlow = new Float32Array(NM);
   const misses: { lane: number; t: number }[] = [];
+  const cueGlow = new Float32Array(9);
+  let anchors: (ScreenPoint | null)[] = [];
+  const anchorV = new THREE.Vector3();
+
+  const setMessage = (text: string) => {
+    highway.message = opts.cue === 'body' ? '' : text;
+    bodyCues.message = opts.cue === 'body' ? text : '';
+  };
 
   // Song clock: the audio output clock when sound is running, else wall time (audio blocked).
   let audioClock = true;
@@ -65,6 +74,7 @@ async function main(): Promise<void> {
 
   const onJudge = (lane: number, j: Judgement, _offset: number, tail: boolean) => {
     highway.onJudge(lane, j, performance.now() / 1000);
+    bodyCues.onJudge(lane, j, performance.now() / 1000, anchors[lane] ?? null);
     if (j === 'miss') {
       misses.push({ lane, t: session.time });
       if (misses.length > 64) misses.shift();
@@ -86,9 +96,10 @@ async function main(): Promise<void> {
     barbell.setWeight(session.weight);
     stage.setRack(session.ex.pins);
     input.setLanes(lanes.length);
-    highway.setSong(song.chart, lanes, LANE_KEYS[lanes.length].map(keyLabel));
+    highway.setSong(song.chart, lanes, LANE_KEYS[lanes.length].map(keyLabel), o.cue);
+    bodyCues.enabled = o.cue === 'body';
     hudRoot.style.setProperty('--hw', `${highway.width}px`);
-    stage.setViewShift(highway.width);
+    stage.setViewShift(o.cue === 'body' ? 0 : highway.width);
     hud.setSong(opts, lanes);
     toReady();
   };
@@ -101,7 +112,7 @@ async function main(): Promise<void> {
     rg = null;
     misses.length = 0;
     phase = 'ready';
-    highway.message = '按 空格 开始\n开始前可以先按键，感受肌肉收紧';
+    setMessage(opts.cue === 'body' ? '按 空格 开始\n光圈收拢到哪块肌肉，就按它的键（左下角是按键对照）' : '按 空格 开始\n开始前可以先按键，感受肌肉收紧');
     hud.showMenu(false);
     hud.showPause(false);
     hud.hideResults();
@@ -137,7 +148,7 @@ async function main(): Promise<void> {
       startCtx,
     );
     session.startSong(song.chart.countIn, song.chart.reps);
-    highway.message = '';
+    setMessage('');
     phase = 'playing';
   };
 
@@ -181,7 +192,8 @@ async function main(): Promise<void> {
       (document.activeElement as HTMLElement | null)?.blur();
       hud.showMenu(false);
       audio.ensure();
-      highway.message = '生成谱面中…';
+      opts = { ...opts, cue: o.cue };
+      setMessage('生成谱面中…');
       setTimeout(() => prepare(o), 30);
     },
     camera: () => {
@@ -201,6 +213,7 @@ async function main(): Promise<void> {
     hover: (id) => (hoverId = id),
   });
   const highway = new Highway(hudRoot);
+  const bodyCues = new BodyCues(hudRoot);
 
   const input = new Input({
     lane: (l, down, tMs, code) => {
@@ -343,12 +356,26 @@ async function main(): Promise<void> {
 
     for (let i = 0; i < NM; i++) {
       hitGlow[i] = Math.max(0, hitGlow[i] - dt * 4);
-      lifter.highlight[i] = Math.max(hitGlow[i] * 0.9, 0);
+      lifter.highlight[i] = hitGlow[i] * 0.45;
+    }
+    const bodyMode = opts.cue === 'body' && phase !== 'menu';
+    if (bodyMode) {
+      bodyCues.cueLevels(t, phase === 'playing' || phase === 'paused' ? rg : null, cueGlow);
+      lanes.forEach((id, l) => (lifter.highlight[MI[id]] = Math.max(lifter.highlight[MI[id]], cueGlow[l])));
     }
     if (hoverId) lifter.highlight[MI[hoverId]] = 1;
     const w = session.world;
     lifter.catchTarget = (session.cleanStage === 'drop' || session.cleanStage === 'caught') && session.state !== 'reset' ? 1 : 0;
     lifter.update(w, phase === 'paused' ? 0 : dt);
+    if (bodyMode) {
+      const W = window.innerWidth,
+        H = window.innerHeight;
+      anchors = lanes.map((id) => {
+        lifter.muscleAnchor(id, anchorV).project(stage.camera);
+        return anchorV.z < 1 ? { x: ((anchorV.x + 1) / 2) * W, y: ((1 - anchorV.y) / 2) * H } : null;
+      });
+    }
+    bodyCues.draw(t, nowMs / 1000, phase === 'playing' || phase === 'paused' ? rg : null, anchors);
     const [bx, by] = w.barPos();
     barbell.update(bx, by, w.q[13]);
     overlays.update(w, lifter, session.barTrail);

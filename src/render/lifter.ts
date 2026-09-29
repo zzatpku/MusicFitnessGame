@@ -87,6 +87,24 @@ const RINGS = 16;
 const RADIAL = 12;
 const SAMPLES = RINGS;
 
+/** Surface point over the belly of each muscle group (right side), where body cues are aimed. */
+const ANCHOR: Record<MuscleId, PathPt> = {
+  calves: ['shank', -0.06, -0.13, 0.02],
+  tibialis: ['shank', 0.04, -0.2, 0.02],
+  quads: ['thigh', 0.075, -0.2, 0.02],
+  hamstrings: ['thigh', -0.06, -0.24, 0.03],
+  glutes: ['pelvis', -0.15, 0.0, 0.08],
+  iliopsoas: ['pelvis', 0.09, 0.03, 0.07],
+  core: ['lumbar', 0.13, 0.08, 0.04],
+  erectors: ['lumbar', -0.09, 0.1, 0.035],
+  lats: ['thorax', -0.12, 0.12, 0.11],
+  traps: ['thorax', -0.07, 0.34, 0.08],
+  delts: ['girdle', 0.03, 0.02, 0.2],
+  biceps: ['uarm', 0.045, -0.15, 0],
+  triceps: ['uarm', -0.045, -0.15, 0],
+  grip: ['farm', 0.025, -0.12, 0],
+};
+
 export interface LifterStyle {
   gripHalf: number;
   /** Half distance between the ankles (m) and toe-out angle (rad). */
@@ -202,7 +220,7 @@ export class LifterView {
     m.emissiveNode = glowCol
       .mul(live.mul(live).mul(0.95).mul(pulse.mul(0.5).add(0.6)))
       .add(glowCol.mul(rimV.mul(live).mul(0.55)))
-      .add(color(0x7fd8ff).mul(sel.mul(rimV.mul(0.9).add(0.12))));
+      .add(color(0x9fe8ff).mul(sel.mul(rimV.mul(1.2).add(0.35))));
     return m;
   }
 
@@ -479,6 +497,12 @@ export class LifterView {
     this.initRest = true;
     const g = this.muscleGeo;
     for (const n of ['position', 'normal', 'act', 'ecc', 'tendon', 'sel']) (g.getAttribute(n) as THREE.BufferAttribute).needsUpdate = true;
+  }
+
+  /** World position of the belly of a muscle group (right side of the body). */
+  muscleAnchor(id: MuscleId, out: THREE.Vector3): THREE.Vector3 {
+    const [seg, x, y, z] = ANCHOR[id];
+    return this.segFrame(seg, 1).point(x, y, z, out);
   }
 
   /** World position of a named point (for overlays). */

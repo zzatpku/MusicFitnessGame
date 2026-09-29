@@ -11,6 +11,12 @@ export const LANE_KEYS: Record<number, string[]> = {
 
 export const keyLabel = (code: string): string => (code === 'Space' ? '空格' : code === 'Semicolon' ? ';' : code.replace('Key', ''));
 
+/** Which hand plays a lane: 0 = left, 1 = right, 2 = thumbs (the middle lane of nine is the space bar). */
+export function handOf(lane: number, n: number): number {
+  if (n === 9) return lane < 4 ? 0 : lane === 4 ? 2 : 1;
+  return lane < Math.ceil(n / 2) ? 0 : 1;
+}
+
 export interface InputHandlers {
   /** Lane key pressed / released; `tMs` is the event time on the performance.now() clock. */
   lane(lane: number, down: boolean, tMs: number, code: string): void;

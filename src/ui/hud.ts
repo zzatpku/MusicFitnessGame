@@ -6,10 +6,12 @@ import { LANE_COUNT, REP_OPTIONS, TEMPOS, laneMuscles, type SongConfig } from '.
 import { LANE_KEYS, keyLabel } from '../game/input.ts';
 import { JI } from '../sim/body.ts';
 import { MI, MUSCLES, type MuscleId } from '../sim/muscles.ts';
-import { SHORT_NAME } from './highway.ts';
+import { SHORT_NAME, type CueMode } from './highway.ts';
 
 export interface StartOptions extends SongConfig {
   auto: boolean;
+  /** Falling-note lanes, or no lanes: the muscle to fire lights up on the body. */
+  cue: CueMode;
 }
 
 export interface HudEvents {
@@ -69,7 +71,7 @@ export class Hud {
   private resultEl!: HTMLElement;
   private laneKey = '';
   private bigTimer = 0;
-  private pick: StartOptions = { ex: 'squat', weight: EXERCISE_MAP.squat.weight.def, bpm: 84, diff: 'easy', reps: 5, auto: false };
+  private pick: StartOptions = { ex: 'squat', weight: EXERCISE_MAP.squat.weight.def, bpm: 84, diff: 'easy', reps: 5, auto: false, cue: 'lanes' };
   private refreshMenu: () => void = () => {};
 
   constructor(root: HTMLElement, ev: HudEvents) {
@@ -263,6 +265,18 @@ export class Hud {
         'cool',
       ),
     );
+    opt(
+      '提示方式',
+      this.seg<CueMode>(
+        [
+          ['lanes', '下落轨道'],
+          ['body', '肌肉发光 · 无轨道（困难）'],
+        ],
+        () => this.pick.cue,
+        (v) => (this.pick.cue = v),
+        'cool',
+      ),
+    );
     c.append(grid);
     c.append(el('h2', '', '按键 → 肌群（左手 = 下肢，右手 = 躯干 / 上肢，9 键中间是空格）'));
     const lanes = el('div', 'lanepreview');
@@ -312,6 +326,7 @@ export class Hud {
         <li>打中后这块肌肉按教练算出的力度收缩；<b>漏掉</b>后它会逐渐松弛（只剩约 30% 力量），直到你再次打中这条轨道的音符。其他肌肉会尽力代偿，但代偿不了就会失败。</li>
         <li>乱按（没有音符时按键）会让肌肉抽动一下，也会干扰动作。</li>
         <li>轨道底部的小条是这块肌肉的实时激活程度，白线是教练需要的激活。</li>
+        <li><b>肌肉发光 · 无轨道（困难）</b>：没有下落的音符，要发力的肌肉会在身体上亮起，一个光圈向它收拢，光圈合上的瞬间按下这块肌肉对应的键——得自己认出是哪块肌肉。左下角有按键对照。</li>
       </ul>
       <h2>动作与失败</h2>
       <ul>
@@ -400,7 +415,7 @@ export class Hud {
 
   setSong(o: StartOptions, lanes: MuscleId[]): void {
     const ex = EXERCISE_MAP[o.ex];
-    this.songEl.innerHTML = `<b>${ex.cn}</b><span>${o.weight} kg · ${o.bpm} BPM · ${lanes.length} 键${o.auto ? ' · 自动演示' : ''}</span>`;
+    this.songEl.innerHTML = `<b>${ex.cn}</b><span>${o.weight} kg · ${o.bpm} BPM · ${lanes.length} 键${o.cue === 'body' ? ' · 无轨道' : ''}${o.auto ? ' · 自动演示' : ''}</span>`;
     this.rebuildRows(o.ex, lanes);
   }
 
@@ -552,7 +567,7 @@ export class Hud {
         <div class="grade g${g}">${g}</div>
         <div>
           <h1>${EXERCISE_MAP[o.ex].cn} · ${o.weight} kg</h1>
-          <p class="sub">${o.bpm} BPM · ${lanes.length} 键 · ${s.reps} 次${o.auto ? ' · 自动演示' : ''}</p>
+          <p class="sub">${o.bpm} BPM · ${lanes.length} 键 · ${s.reps} 次${o.cue === 'body' ? ' · 无轨道' : ''}${o.auto ? ' · 自动演示' : ''}</p>
           <div class="rstats">
             <div><small>总分</small><b class="hot">${rg.score + bonus}</b></div>
             <div><small>准确率</small><b>${(acc * 100).toFixed(1)}%</b></div>
