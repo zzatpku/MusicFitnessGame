@@ -4,10 +4,29 @@ export type Judgement = 'perfect' | 'great' | 'good' | 'miss';
 /** Timing windows (s, ±). */
 export const WINDOW = { perfect: 0.045, great: 0.09, good: 0.135 };
 const WEIGHT: Record<Judgement, number> = { perfect: 1, great: 0.8, good: 0.5, miss: 0 };
-/** How strongly a hit keeps its muscle firing (sloppy timing = slightly weaker contraction). */
-const GATE_OF: Record<Judgement, number> = { perfect: 1, great: 0.97, good: 0.9, miss: 0.9 };
 /** Releasing a hold this close to its tail still completes it. */
 const HOLD_EARLY = 0.12;
+
+/**
+ * Rate coding: every press is a burst of neural drive (rise ~30 ms, fade ~0.4 s). The same kernel
+ * over the chart's notes gives the drive the lift expects, so pressing as densely as the notes
+ * yields exactly the coach's activation.
+ */
+const RISE = 0.03;
+const FADE = 0.4;
+const burst = (s: number) => (s < 0 ? 0 : (1 - Math.exp(-s / RISE)) * Math.exp(-s / FADE));
+/** Extra activation per unit of drive beyond what the notes ask for (mashing piles up). */
+const EXCESS_GAIN = 0.25;
+/** A key held down outside a hold note becomes a sustained hard contraction after this long. */
+const HOLD_AFTER = 0.3;
+const HOLD_EXCESS = 0.6;
+
+export interface Drive {
+  /** Share of the needed activation the presses deliver (0..1). */
+  ratio: number;
+  /** Activation on top of what the lift needs (extra presses, keys held down). */
+  excess: number;
+}
 
 export interface NoteState {
   note: Note;
@@ -19,9 +38,8 @@ export interface NoteState {
 }
 
 /**
- * Judges key presses against the chart and turns the result into per-lane gates for the physics:
- * a hit switches the lane's muscle on, a miss (or a hold let go early) switches it off until the
- * next hit in that lane.
+ * Judges key presses against the chart (score, combo) and turns the presses themselves into neural
+ * drive for the physics: each press is a contraction of that lane's muscle.
  */
 export class RhythmGame {
   readonly chart: Chart;
@@ -29,7 +47,9 @@ export class RhythmGame {
   private readonly lanes: NoteState[][];
   private readonly nextIdx: number[];
   private readonly activeHold: (NoteState | null)[];
-  private readonly gate: number[];
+  private readonly presses: number[][];
+  private readonly strays: number[][];
+  private readonly downSince: number[];
   readonly down: boolean[];
   combo = 0;
   maxCombo = 0;
@@ -53,7 +73,9 @@ export class RhythmGame {
     for (const L of this.lanes) L.sort((a, b) => a.note.t - b.note.t);
     this.nextIdx = new Array(n).fill(0);
     this.activeHold = new Array(n).fill(null);
-    this.gate = new Array(n).fill(1);
+    this.presses = Array.from({ length: n }, () => []);
+    this.strays = Array.from({ length: n }, () => []);
+    this.downSince = new Array(n).fill(NaN);
     this.down = new Array(n).fill(false);
     this.laneHit = new Array(n).fill(0);
     this.laneMiss = new Array(n).fill(0);
@@ -72,12 +94,13 @@ export class RhythmGame {
 
   press(lane: number, t: number): Judgement | 'stray' | 'regrab' {
     this.down[lane] = true;
+    this.downSince[lane] = t;
+    this.logPress(lane, t);
     if (this.autoplay) return 'stray';
     const L = this.lanes[lane];
     const h = this.activeHold[lane];
     if (h && !h.holding && t < h.note.end - HOLD_EARLY) {
       h.holding = true;
-      this.gate[lane] = GATE_OF[h.judged ?? 'good'];
       return 'regrab';
     }
     const s = L[this.nextIdx[lane]];
@@ -96,17 +119,36 @@ export class RhythmGame {
       return j;
     }
     this.stray++;
+    this.strays[lane].push(t);
+    if (this.strays[lane].length > 64) this.strays[lane].shift();
     return 'stray';
   }
 
   release(lane: number, t: number): void {
     this.down[lane] = false;
+    this.downSince[lane] = NaN;
     if (this.autoplay) return;
     const h = this.activeHold[lane];
     if (!h || !h.holding) return;
     h.holding = false;
     if (t >= h.note.end - HOLD_EARLY) this.finishHold(lane, h, 'perfect', t);
-    else this.gate[lane] = 0;
+  }
+
+  private logPress(lane: number, t: number): void {
+    const P = this.presses[lane];
+    P.push(t);
+    while (P.length && P[0] < t - 3) P.shift();
+  }
+
+  /** Presses in `lane` that matched no note since song time `since`. */
+  straysSince(lane: number, since: number): number {
+    return this.strays[lane].filter((s) => s >= since).length;
+  }
+
+  /** The lane's key is being held down outside a hold note long enough to count as clenching. */
+  clenching(lane: number, t: number): boolean {
+    const h = this.activeHold[lane];
+    return !(h && t < h.note.end) && t - this.downSince[lane] > HOLD_AFTER;
   }
 
   /** Advance the song clock: autoplay hits, misses for notes that left their window, hold tails. */
@@ -117,6 +159,7 @@ export class RhythmGame {
         while (this.nextIdx[lane] < L.length && L[this.nextIdx[lane]].note.t <= t) {
           const s = L[this.nextIdx[lane]++];
           s.judged = 'perfect';
+          this.logPress(lane, s.note.t);
           this.register(lane, 'perfect', 0, false);
           if (s.note.hold) {
             s.holding = true;
@@ -137,6 +180,8 @@ export class RhythmGame {
   }
 
   private finishHold(lane: number, h: NoteState, j: Judgement, t: number): void {
+    // Keeping the key down past a completed hold only starts to count as clenching from here.
+    if (h.holding && this.down[lane]) this.downSince[lane] = h.note.end;
     h.holding = false;
     h.tail = j;
     if (j === 'miss') h.missAt = t;
@@ -144,9 +189,27 @@ export class RhythmGame {
     this.register(lane, j, 0, true);
   }
 
-  /** 0..1: how much the lane's muscle is allowed to fire right now. */
-  gateAt(lane: number): number {
-    return this.gate[lane];
+  /**
+   * Neural drive of a lane's muscle at song time `t`, from the presses themselves. Presses as dense
+   * as the notes → ratio 1; fewer → proportionally weaker; more (or a key held down outside a hold
+   * note) → excess activation on top of what the lift needs.
+   */
+  driveAt(lane: number, t: number): Drive {
+    const h = this.activeHold[lane];
+    if (h && t < h.note.end) return { ratio: h.holding ? 1 : 0, excess: 0 };
+    let expected = 0;
+    for (const st of this.lanes[lane]) {
+      const s = st.note.t;
+      if (s > t) break;
+      if (s > t - 2.5) expected += burst(t - s);
+    }
+    let delivered = 0;
+    for (const p of this.presses[lane]) if (p <= t) delivered += burst(t - p);
+    const ratio = expected > 0.05 ? Math.min(1, delivered / expected) : 1;
+    let excess = Math.max(0, delivered - expected) * EXCESS_GAIN;
+    const held = t - this.downSince[lane];
+    if (held > HOLD_AFTER) excess += HOLD_EXCESS * Math.min(1, (held - HOLD_AFTER) / HOLD_AFTER);
+    return { ratio, excess };
   }
 
   isHolding(lane: number): boolean {
@@ -157,7 +220,6 @@ export class RhythmGame {
     this.judgedUnits++;
     this.accSum += WEIGHT[j];
     this.counts[j]++;
-    if (!tail || j === 'miss') this.gate[lane] = GATE_OF[j] * (j === 'miss' ? 0 : 1);
     if (j === 'miss') {
       this.combo = 0;
       this.laneMiss[lane]++;

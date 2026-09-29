@@ -182,6 +182,8 @@ async function main(): Promise<void> {
   const finish = () => {
     if (!rg || !song) return;
     phase = 'results';
+    session.drive.fill(1);
+    session.excess.fill(0);
     music.stop();
     for (let l = 0; l < lanes.length; l++) music.holdOff(l);
     hud.showResults(opts, session, rg, lanes);
@@ -238,10 +240,8 @@ async function main(): Promise<void> {
       if (phase !== 'playing' || !rg) return;
       const t = songTime(tMs);
       if (down) {
-        if (rg.press(l, t) === 'stray') {
-          session.pulse(m, 0.3);
-          music.stray();
-        }
+        if (rg.press(l, t) === 'stray') music.stray();
+        hitGlow[m] = Math.max(hitGlow[m], 0.6);
       } else rg.release(l, t);
     },
     action: (a) => onAction(a),
@@ -304,12 +304,26 @@ async function main(): Promise<void> {
       sfx.fail();
       const recent = new Map<number, number>();
       for (const m of misses) if (session.time - m.t < 3) recent.set(m.lane, (recent.get(m.lane) ?? 0) + 1);
-      const culprit = [...recent.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 2)
-        .map(([l, c]) => `${SHORT_NAME[lanes[l]]}×${c}`)
-        .join('、');
-      hud.flash(`第 ${session.repIdx + 1} 次 ✗`, `${String(data ?? '')}${culprit ? `　漏掉：${culprit}` : ''}`, false);
+      const top = (m: Map<number, number>) =>
+        [...m.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 2)
+          .map(([l, c]) => `${SHORT_NAME[lanes[l]]}×${c}`)
+          .join('、');
+      const extra = new Map<number, number>();
+      const clenched: string[] = [];
+      if (rg)
+        for (let l = 0; l < lanes.length; l++) {
+          if (rg.clenching(l, session.time)) clenched.push(SHORT_NAME[lanes[l]]);
+          else {
+            const c = rg.straysSince(l, session.time - 3);
+            if (c) extra.set(l, c);
+          }
+        }
+      const why = [recent.size ? `漏掉：${top(recent)}` : '', extra.size ? `多按：${top(extra)}` : '', clenched.length ? `一直按住：${clenched.slice(0, 3).join('、')}` : '']
+        .filter(Boolean)
+        .join('　');
+      hud.flash(`第 ${session.repIdx + 1} 次 ✗`, `${String(data ?? '')}${why ? `　${why}` : ''}`, false);
     }
   };
 
@@ -341,7 +355,9 @@ async function main(): Promise<void> {
       t = songTime(nowMs);
       rg.update(t);
       for (let l = 0; l < lanes.length; l++) {
-        session.gate[MI[lanes[l]]] = rg.gateAt(l);
+        const d = rg.driveAt(l, t);
+        session.drive[MI[lanes[l]]] = d.ratio;
+        session.excess[MI[lanes[l]]] = d.excess;
         if (rg.isHolding(l)) music.holdOn(l);
         else music.holdOff(l);
       }

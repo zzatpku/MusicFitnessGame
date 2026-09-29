@@ -6,14 +6,15 @@ import { EXERCISE_MAP, type ExerciseDef, type ExerciseId, type ExercisePlan, typ
 
 export type RepState = 'ready' | 'lift' | 'success' | 'fail' | 'reset' | 'done';
 
-/** Share of the coach's activation a player muscle keeps while its gate is closed (notes missed). */
-export const GATE_FLOOR = 0.3;
+/** Share of the coach's activation a player muscle keeps with no drive from key presses (reflexes). */
+export const DRIVE_FLOOR = 0.3;
 /** Ankle muscles also carry the automatic balance reflex, so they never go fully limp. */
-const FLOOR_OF = new Float64Array(NM).fill(GATE_FLOOR);
+const FLOOR_OF = new Float64Array(NM).fill(DRIVE_FLOOR);
 FLOOR_OF[MI.calves] = FLOOR_OF[MI.tibialis] = 0.5;
-const GATE_UP = 0.03;
-const GATE_DOWN = 0.3;
-const PULSE_TAU = 0.12;
+/** Smoothing of the per-frame drive updates (s). */
+const DRIVE_TAU = 0.03;
+/** RMS deviation from the planned movement (°) that still counts as good form. */
+const DEVIATION_OK = 8;
 
 export interface RepResult {
   rep: number;
@@ -24,6 +25,8 @@ export interface RepResult {
   peakPower: number;
   time: number;
   bonus: number;
+  /** RMS deviation of hip, knee and lumbar from the planned movement (degrees). */
+  deviation: number;
 }
 
 /** Per-rep tracking used for judging and form scoring. */
@@ -42,12 +45,15 @@ class RepTracker {
   hipsFirst = 0;
   heelRaise = 0;
   maxBarY = 0;
+  devSum = 0;
+  devN = 0;
 }
 
 /**
  * One lifter on the platform, driven by the song clock. Reps start on bar lines; within a rep the
- * reference timeline advances with the music. Muscles on player lanes fire at the coach's level
- * scaled by their gate (kept open by hitting that lane's notes); every other muscle is automatic.
+ * reference timeline advances with the music. Muscles on player lanes are driven by the key presses
+ * (share of the coach's activation plus any excess); every other muscle is automatic and re-solves
+ * around them.
  */
 export class LiftSession {
   readonly world: LifterWorld;
@@ -75,16 +81,17 @@ export class LiftSession {
   private readonly stageBuf = new Float64Array(NM);
 
   readonly laneMask = new Uint8Array(NM);
-  /** Gate per muscle from the rhythm layer: 1 = the player keeps it firing, 0 = its notes were missed. */
-  readonly gate = new Float64Array(NM).fill(1);
-  private readonly gateS = new Float64Array(NM).fill(1);
+  /** Neural drive of each player muscle from its key presses: share of the needed activation (0..1)… */
+  readonly drive = new Float64Array(NM).fill(1);
+  /** …and activation on top of what the lift needs (extra presses, keys held down). */
+  readonly excess = new Float64Array(NM);
+  private readonly driveS = new Float64Array(NM).fill(1);
+  private readonly excessS = new Float64Array(NM);
   /** Sustained extra excitation (keys held outside the song). */
   readonly hold = new Float64Array(NM);
-  private readonly pulseA = new Float64Array(NM);
   /** Coach's activation per muscle (what the lift needs right now). */
   readonly target = new Float64Array(NM);
   readonly excitation = new Float64Array(NM);
-  private readonly gain = new Float64Array(NM);
   private readonly free = new Uint8Array(NM);
   private readonly fixedA = new Float64Array(NM);
 
@@ -107,12 +114,10 @@ export class LiftSession {
   private readonly startA = new Float64Array(NM);
   private trailTimer = 0;
   private stepCount = 0;
-  private readonly pulseDecay: number;
   onEvent: ((type: string, data?: unknown) => void) | null = null;
 
   constructor(exId: ExerciseId = 'squat') {
     this.world = new LifterWorld(60);
-    this.pulseDecay = Math.exp(-this.world.dt / PULSE_TAU);
     this.configure(exId, EXERCISE_MAP[exId].weight.def, 84);
   }
 
@@ -151,10 +156,11 @@ export class LiftSession {
     this.repIdx = -1;
     this.reps = 0;
     this.results.length = 0;
-    this.gate.fill(1);
-    this.gateS.fill(1);
+    this.drive.fill(1);
+    this.driveS.fill(1);
+    this.excess.fill(0);
+    this.excessS.fill(0);
     this.hold.fill(0);
-    this.pulseA.fill(0);
     this.toStart();
     this.state = 'ready';
     this.result = null;
@@ -197,11 +203,6 @@ export class LiftSession {
     this.results.length = 0;
   }
 
-  /** A short involuntary twitch of one muscle (stray key press). */
-  pulse(i: number, amp: number): void {
-    this.pulseA[i] = Math.max(this.pulseA[i], amp);
-  }
-
   /** Step the physics towards song time `t` (catching up over a few frames after a hitch). */
   advanceTo(t: number, maxSteps = 400): void {
     const dt = this.world.dt;
@@ -223,11 +224,10 @@ export class LiftSession {
     const w = this.world;
     const dt = w.dt;
     this.time += dt;
+    const k = Math.min(1, dt / DRIVE_TAU);
     for (let i = 0; i < NM; i++) {
-      const g = this.gate[i],
-        gs = this.gateS[i];
-      this.gateS[i] = gs + (g - gs) * Math.min(1, dt / (g > gs ? GATE_UP : GATE_DOWN));
-      this.pulseA[i] *= this.pulseDecay;
+      this.driveS[i] += (this.drive[i] - this.driveS[i]) * k;
+      this.excessS[i] += (this.excess[i] - this.excessS[i]) * k;
     }
     if (this.songOn) this.schedule();
     if (this.state === 'reset') {
@@ -365,8 +365,8 @@ export class LiftSession {
   }
 
   /**
-   * Coach solution for every muscle (inverse dynamics + PD + static optimisation). Lane muscles are
-   * scaled by their gate; key twitches add on top.
+   * Coach solution for every muscle (inverse dynamics + PD + static optimisation). Lane muscles fire
+   * as the key presses drive them — the share of the needed activation plus any excess.
    */
   private control(): void {
     const w = this.world;
@@ -412,23 +412,23 @@ export class LiftSession {
     const coachA = ballistic ? this.stageBuf : this.coach.solveAll(w, this.ref);
     this.target.set(coachA);
 
-    let weakened = false;
+    let deviates = false;
     for (let i = 0; i < NM; i++) {
-      const g = this.laneMask[i] ? FLOOR_OF[i] + (1 - FLOOR_OF[i]) * this.gateS[i] : 1;
-      this.gain[i] = g;
-      if (g < 0.98) weakened = true;
+      this.free[i] = this.laneMask[i] ? 0 : 1;
+      if (!this.laneMask[i]) continue;
+      // Force–frequency relation: force rises steeply at low firing rates and saturates near the top.
+      const r = 1 - this.driveS[i];
+      const v = Math.min(1, coachA[i] * (FLOOR_OF[i] + (1 - FLOOR_OF[i]) * (1 - r * r)) + this.excessS[i]);
+      this.fixedA[i] = v;
+      if (Math.abs(v - coachA[i]) > 0.02) deviates = true;
     }
     let a = coachA;
-    if (weakened && !ballistic) {
-      // Missed muscles stay weak; the automatic ones re-solve around them (synergists compensate
-      // where the anatomy allows, balance is kept as well as possible).
-      for (let i = 0; i < NM; i++) {
-        this.free[i] = this.gain[i] < 0.98 ? 0 : 1;
-        this.fixedA[i] = coachA[i] * this.gain[i];
-      }
+    if (deviates && !ballistic) {
+      // The player's muscles do what the presses say; the automatic ones re-solve around them
+      // (synergists compensate where the anatomy allows, balance is kept as well as possible).
       a = this.coach.opt.solve(ms, this.coach.tauActive, this.free, this.fixedA, this.coach.allJoints);
     }
-    for (let i = 0; i < NM; i++) this.excitation[i] = (ballistic ? a[i] * this.gain[i] : a[i]) + this.hold[i] + this.pulseA[i];
+    for (let i = 0; i < NM; i++) this.excitation[i] = (this.laneMask[i] ? this.fixedA[i] : a[i]) + this.hold[i];
     this.excitation[MI.grip] = w.barMode === 'hands' ? 0.85 : 0;
     for (let i = 0; i < NM; i++) ms.u[i] = Math.max(0, Math.min(1, this.excitation[i]));
   }
@@ -518,10 +518,15 @@ export class LiftSession {
 
   // ------------------------------------------------------------------ judging
 
+  private deviationDeg(): number {
+    const tr = this.tracker;
+    return tr.devN ? (Math.sqrt(tr.devSum / tr.devN) * 180) / Math.PI : 0;
+  }
+
   private fail(reason: string): void {
     if (this.state !== 'lift') return;
     this.state = 'fail';
-    this.result = { rep: this.repIdx, ok: false, reason, form: 0, details: [], peakPower: this.tracker.peakPower, time: this.tracker.t, bonus: 0 };
+    this.result = { rep: this.repIdx, ok: false, reason, form: 0, details: [], peakPower: this.tracker.peakPower, time: this.tracker.t, bonus: 0, deviation: this.deviationDeg() };
     this.results.push(this.result);
     this.message = reason;
     this.onEvent?.('fail', reason);
@@ -552,10 +557,15 @@ export class LiftSession {
       form -= Math.min(15, tr.hipsFirst * 20);
       details.push('起身时臀部先起（膝髋不同步）');
     }
+    const deviation = this.deviationDeg();
+    if (deviation > DEVIATION_OK) {
+      form -= Math.min(35, (deviation - DEVIATION_OK) * 2.5);
+      details.push(`动作变形：平均偏离标准轨迹 ${deviation.toFixed(0)}°`);
+    }
     form = Math.max(0, Math.round(form));
     if (!details.length) details.push('动作标准！');
     this.state = 'success';
-    this.result = { rep: this.repIdx, ok: true, reason: '成功', form, details, peakPower: tr.peakPower, time: tr.t, bonus: Math.round(this.weight * 20 * (form / 100)) };
+    this.result = { rep: this.repIdx, ok: true, reason: '成功', form, details, peakPower: tr.peakPower, time: tr.t, bonus: Math.round(this.weight * 20 * (form / 100)), deviation };
     this.results.push(this.result);
     this.message = `成功！动作评分 ${form}`;
     this.onEvent?.('success', this.result);
@@ -592,6 +602,14 @@ export class LiftSession {
     if ((!explosive && footTh < -0.4) || footTh < -0.7 || cx > toeX + comMargin + 0.02) return this.fail('重心过于靠前 — 向前失去平衡');
     if (w.bodyFloorF > 60) return this.fail('摔倒了');
     if (footTh < -0.05) tr.heelRaise = Math.max(tr.heelRaise, -footTh);
+    if (!explosive && this.cleanStage !== 'burst' && this.cleanStage !== 'drop') {
+      const r = this.ref.q;
+      const dh = anat[JI.hip] - r[JI.hip],
+        dk = anat[JI.knee] - r[JI.knee],
+        dl = anat[JI.lumbar] - r[JI.lumbar];
+      tr.devSum += (dh * dh + dk * dk + dl * dl) / 3;
+      tr.devN++;
+    }
 
     if (w.barSupported()) tr.peakPower = Math.max(tr.peakPower, w.barMass * 9.81 * bvy);
 
