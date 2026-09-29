@@ -178,6 +178,7 @@ async function main(): Promise<void> {
 
   const hud = new Hud(hudRoot, {
     start: (o) => {
+      (document.activeElement as HTMLElement | null)?.blur();
       hud.showMenu(false);
       audio.ensure();
       highway.message = '生成谱面中…';
@@ -202,8 +203,13 @@ async function main(): Promise<void> {
   const highway = new Highway(hudRoot);
 
   const input = new Input({
-    lane: (l, down, tMs) => {
+    lane: (l, down, tMs, code) => {
       if (l >= lanes.length) return;
+      // Nine lanes put a lane on the space bar; outside the song it keeps its start/resume role.
+      if (code === 'Space' && phase !== 'playing') {
+        if (down) onAction('go');
+        return;
+      }
       keysDown[l] = down;
       highway.setKey(l, down);
       const m = MI[lanes[l]];
@@ -225,39 +231,41 @@ async function main(): Promise<void> {
         }
       } else rg.release(l, t);
     },
-    action: (a) => {
-      if (a === 'help') return hud.setHelp(!hud.helpOpen);
-      if (hud.helpOpen) {
-        if (a === 'escape' || a === 'go') hud.setHelp(false);
-        return;
-      }
-      switch (a) {
-        case 'go':
-          if (phase === 'ready') startSong();
-          else if (phase === 'paused') resume();
-          else if (phase === 'results') toReady();
-          break;
-        case 'escape':
-          if (phase === 'playing') pause();
-          else if (phase === 'paused') resume();
-          else if (phase === 'ready' || phase === 'results') toMenu();
-          break;
-        case 'restart':
-          if (song && phase !== 'menu') toReady();
-          break;
-        case 'camera':
-          camIdx = (camIdx + 1) % cams.length;
-          stage.setCamera(cams[camIdx]);
-          break;
-        case 'overlays': {
-          const v = overlays.visible;
-          const on = !(v.com && v.grf && v.path && v.torque);
-          v.com = v.grf = v.path = v.torque = on;
-          break;
-        }
-      }
-    },
+    action: (a) => onAction(a),
   });
+
+  function onAction(a: string): void {
+    if (a === 'help') return hud.setHelp(!hud.helpOpen);
+    if (hud.helpOpen) {
+      if (a === 'escape' || a === 'go') hud.setHelp(false);
+      return;
+    }
+    switch (a) {
+      case 'go':
+        if (phase === 'ready') startSong();
+        else if (phase === 'paused') resume();
+        else if (phase === 'results') toReady();
+        break;
+      case 'escape':
+        if (phase === 'playing') pause();
+        else if (phase === 'paused') resume();
+        else if (phase === 'ready' || phase === 'results') toMenu();
+        break;
+      case 'restart':
+        if (song && phase !== 'menu') toReady();
+        break;
+      case 'camera':
+        camIdx = (camIdx + 1) % cams.length;
+        stage.setCamera(cams[camIdx]);
+        break;
+      case 'overlays': {
+        const v = overlays.visible;
+        const on = !(v.com && v.grf && v.path && v.torque);
+        v.com = v.grf = v.path = v.torque = on;
+        break;
+      }
+    }
+  }
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) pause();

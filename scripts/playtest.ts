@@ -15,7 +15,7 @@ const only = args.find((a) => !a.startsWith('-'));
 const num = (k: string, d: number) => Number(args.find((a) => a.startsWith(`-${k}=`))?.split('=')[1] ?? d);
 const bpm = num('bpm', 84);
 const reps = num('reps', 3);
-const diffs: Difficulty[] = ['easy', 'normal', 'expert'];
+const diffs: Difficulty[] = ['easy', 'normal', 'hard', 'expert'];
 const bots = { auto: [1, 0, 0], good: [0.92, 0.035, 0], sloppy: [0.7, 0.06, 0.4] } as Record<string, [number, number, number]>;
 
 let seed = 12345;

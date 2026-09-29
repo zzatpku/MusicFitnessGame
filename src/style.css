@@ -326,6 +326,16 @@ body {
   font-size: 9px;
 }
 
+.key.wide {
+  font-size: 9.5px;
+  letter-spacing: -0.5px;
+}
+
+.lp .key.wide {
+  width: 44px;
+  font-size: 12px;
+}
+
 .mname {
   font-size: 12.5px;
   display: flex;

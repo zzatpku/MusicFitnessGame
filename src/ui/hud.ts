@@ -24,7 +24,9 @@ export interface HudEvents {
   hover(id: MuscleId | null): void;
 }
 
-const DIFF_CN: Record<Difficulty, string> = { easy: '简单', normal: '标准', expert: '专家' };
+const DIFF_CN: Record<Difficulty, string> = { easy: '简单', normal: '标准', hard: '困难', expert: '专家' };
+const DIFFS: Difficulty[] = ['easy', 'normal', 'hard', 'expert'];
+const keyCap = (label: string, extra = '') => `<span class="key${label.length > 1 ? ' wide' : ''}${extra}">${label}</span>`;
 const JOINT_ROWS: [number, string, number][] = [
   [JI.hip, '髋', 900],
   [JI.knee, '膝', 700],
@@ -215,7 +217,7 @@ export class Hud {
     opt(
       '难度 · 键数',
       this.seg<Difficulty>(
-        (['easy', 'normal', 'expert'] as Difficulty[]).map((d) => [d, `${DIFF_CN[d]} ${LANE_COUNT[d]}键`]),
+        DIFFS.map((d) => [d, `${DIFF_CN[d]} ${LANE_COUNT[d]}键`]),
         () => this.pick.diff,
         (v) => (this.pick.diff = v),
       ),
@@ -262,7 +264,7 @@ export class Hud {
       ),
     );
     c.append(grid);
-    c.append(el('h2', '', '按键 → 肌群（左手 = 下肢，右手 = 躯干 / 上肢）'));
+    c.append(el('h2', '', '按键 → 肌群（左手 = 下肢，右手 = 躯干 / 上肢，9 键中间是空格）'));
     const lanes = el('div', 'lanepreview');
     c.append(lanes);
     c.append(
@@ -289,7 +291,7 @@ export class Hud {
       const ids = laneMuscles(this.pick.ex, this.pick.diff);
       const keys = LANE_KEYS[ids.length];
       lanes.innerHTML = ids
-        .map((id, i) => `<div class="lp"><span class="key">${keyLabel(keys[i])}</span><b>${MUSCLES[MI[id]].cn}</b><small>${MUSCLES[MI[id]].role.split('：')[0]}</small></div>`)
+        .map((id, i) => `<div class="lp">${keyCap(keyLabel(keys[i]))}<b>${MUSCLES[MI[id]].cn}</b><small>${MUSCLES[MI[id]].role.split('：')[0]}</small></div>`)
         .join('');
     };
     this.refreshMenu();
@@ -304,7 +306,7 @@ export class Hud {
       <p class="sub">这是一个“肌肉节奏游戏”：音乐里的每个音符都是一次发力指令，身体的动作完全由物理引擎根据你的发力模拟出来。</p>
       <h2>音符</h2>
       <ul>
-        <li><b>每条轨道 = 一组肌肉</b>，底部标着按键和肌肉名。左手管下肢（小腿、股四头、腘绳、臀），右手管躯干和上肢（核心、竖脊肌、背阔、斜方、三角肌）。</li>
+        <li><b>每条轨道 = 一组肌肉</b>，底部标着按键和肌肉名。左手管下肢（小腿、股四头、腘绳、臀），右手管躯干和上肢（核心、竖脊肌、背阔、斜方、三角肌）。9 键模式中间那条轨道是<b>空格</b>，用拇指按。</li>
         <li><b>音符越密 = 这块肌肉此刻需要越大的力量</b>（像运动神经元的放电频率）。长条音符 = 持续收缩，按住到结束。</li>
         <li>音符落到发光线时按下：PERFECT ±45 ms，GREAT ±90 ms，GOOD ±135 ms。</li>
         <li>打中后这块肌肉按教练算出的力度收缩；<b>漏掉</b>后它会逐渐松弛（只剩约 30% 力量），直到你再次打中这条轨道的音符。其他肌肉会尽力代偿，但代偿不了就会失败。</li>
@@ -420,7 +422,8 @@ export class Hud {
       const spec = MUSCLES[MI[id]];
       const lane = lanes.indexOf(id);
       const row = el('div', 'mrow' + (lane >= 0 ? '' : ' auto'));
-      row.append(el('div', 'key' + (lane >= 0 ? '' : ' auto'), lane >= 0 ? keyLabel(keys[lane]) : '自动'));
+      const label = lane >= 0 ? keyLabel(keys[lane]) : '自动';
+      row.append(el('div', 'key' + (lane >= 0 ? (label.length > 1 ? ' wide' : '') : ' auto'), label));
       const name = el('div', 'mname', `${SHORT_NAME[id]}<small>${spec.en}</small>`);
       const tag = el('span', 'mtag', '放松');
       name.append(tag);

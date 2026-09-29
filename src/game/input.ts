@@ -1,15 +1,19 @@
-/** Lane keys on the home row, split between the hands (left = legs, right = trunk and arms). */
+/**
+ * Lane keys on the home row, split between the hands (left = legs, right = trunk and arms);
+ * with nine lanes the middle one is the space bar under the thumbs.
+ */
 export const LANE_KEYS: Record<number, string[]> = {
   4: ['KeyD', 'KeyF', 'KeyJ', 'KeyK'],
   6: ['KeyS', 'KeyD', 'KeyF', 'KeyJ', 'KeyK', 'KeyL'],
-  9: ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyL'],
+  8: ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon'],
+  9: ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'Space', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon'],
 };
 
-export const keyLabel = (code: string): string => code.replace('Key', '');
+export const keyLabel = (code: string): string => (code === 'Space' ? '空格' : code === 'Semicolon' ? ';' : code.replace('Key', ''));
 
 export interface InputHandlers {
   /** Lane key pressed / released; `tMs` is the event time on the performance.now() clock. */
-  lane(lane: number, down: boolean, tMs: number): void;
+  lane(lane: number, down: boolean, tMs: number, code: string): void;
   action(name: string): void;
 }
 
@@ -51,21 +55,21 @@ export class Input {
       if (e.repeat || down === this.held.has(e.code)) return;
       if (down) this.held.add(e.code);
       else this.held.delete(e.code);
-      this.h.lane(lane, down, e.timeStamp || performance.now());
+      this.h.lane(lane, down, e.timeStamp || performance.now(), e.code);
       return;
     }
     const a = ACTIONS[e.code];
-    if (a && down && !e.repeat) {
-      e.preventDefault();
-      this.h.action(a);
-    }
+    if (!a) return;
+    // Space/Enter would otherwise also "click" whatever button still has focus.
+    e.preventDefault();
+    if (down && !e.repeat) this.h.action(a);
   }
 
   releaseAll(): void {
     const now = performance.now();
     for (const code of this.held) {
       const lane = this.layout.indexOf(code);
-      if (lane >= 0) this.h.lane(lane, false, now);
+      if (lane >= 0) this.h.lane(lane, false, now, code);
     }
     this.held.clear();
   }

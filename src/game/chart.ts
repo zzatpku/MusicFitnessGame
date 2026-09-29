@@ -49,8 +49,15 @@ export interface Recording {
 const LIMITS: Record<Difficulty, { perHand: number; events: number; holds: number; sixteenths: boolean; high: number }> = {
   easy: { perHand: 2, events: 2, holds: 1, sixteenths: false, high: 0.5 },
   normal: { perHand: 2, events: 3, holds: 2, sixteenths: true, high: 0.3 },
+  hard: { perHand: 2, events: 3, holds: 2, sixteenths: true, high: 0.3 },
   expert: { perHand: 2, events: 4, holds: 2, sixteenths: true, high: 0.3 },
 };
+
+/** Which hand plays a lane: 0 = left, 1 = right, 2 = thumbs (the middle lane of nine is the space bar). */
+function handOf(lane: number, n: number): number {
+  if (n === 9) return lane < 4 ? 0 : lane === 4 ? 2 : 1;
+  return lane < Math.ceil(n / 2) ? 0 : 1;
+}
 /** Activation at which a muscle gets notes, and below which an episode of activity ends. */
 const ON = 0.12;
 const OFF = 0.07;
@@ -166,13 +173,12 @@ export function buildChart(
 
   // Per-hand chord cap at each instant (keep the strongest notes, prefer onsets).
   const rank = (c: Cand) => c.strength + (c.onset ? 0.5 : 0) + (c.hold ? 0.3 : 0);
-  const split = Math.ceil(lanes.length / 2);
   const kept = new Set<Cand>(cands);
   const byCell = new Map<number, Cand[]>();
   for (const c of cands) (byCell.get(c.cell) ?? byCell.set(c.cell, []).get(c.cell)!).push(c);
   for (const group of byCell.values()) {
     for (const hand of [0, 1]) {
-      const mine = group.filter((c) => (c.lane < split ? 0 : 1) === hand).sort((x, y) => rank(y) - rank(x));
+      const mine = group.filter((c) => handOf(c.lane, lanes.length) === hand).sort((x, y) => rank(y) - rank(x));
       for (const c of mine.slice(lim.perHand)) kept.delete(c);
     }
   }

@@ -3,7 +3,7 @@ import { EXERCISE_MAP, type Difficulty, type ExerciseId } from './exercises.ts';
 import type { LiftSession } from './session.ts';
 import { buildChart, type Chart, type Recording } from './chart.ts';
 
-export const LANE_COUNT: Record<Difficulty, number> = { easy: 4, normal: 6, expert: 9 };
+export const LANE_COUNT: Record<Difficulty, number> = { easy: 4, normal: 6, hard: 8, expert: 9 };
 export const TEMPOS = [
   { bpm: 70, cn: '慢' },
   { bpm: 84, cn: '中' },

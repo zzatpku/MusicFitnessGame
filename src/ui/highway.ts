@@ -239,9 +239,9 @@ export class Highway {
         g.fillRect(cx - kw / 2 + 3, ky + 30, kw - 6, 2);
       }
       g.fillStyle = '#111';
-      g.font = '800 15px "SF Mono", Menlo, monospace';
+      g.font = L.key.length > 1 ? '800 12px -apple-system, "PingFang SC", sans-serif' : '800 15px "SF Mono", Menlo, monospace';
       g.textAlign = 'center';
-      g.fillText(L.key, cx, ky + 21 + (this.down[i] ? 2 : 0));
+      g.fillText(L.key, cx, ky + 20 + (this.down[i] ? 2 : 0));
       g.fillStyle = `hsl(${L.hue},80%,72%)`;
       g.font = '600 12px -apple-system, "PingFang SC", sans-serif';
       g.fillText(SHORT_NAME[L.id], cx, ky + 50);

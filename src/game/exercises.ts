@@ -5,7 +5,7 @@ import { Timeline, solvePose, type Keyframe } from '../sim/reference.ts';
 import { BAR_CAPSULES, type BarMode } from '../sim/world.ts';
 
 export type ExerciseId = 'squat' | 'deadlift' | 'clean' | 'frontSquat' | 'rdl';
-export type Difficulty = 'easy' | 'normal' | 'expert';
+export type Difficulty = 'easy' | 'normal' | 'hard' | 'expert';
 /** Musical role of each bar of a rep: build-up, full groove (the concentric effort), cool-down. */
 export type Section = 'build' | 'drop' | 'rest';
 
@@ -46,7 +46,7 @@ export interface ExerciseDef {
   barOnFloor: boolean;
   weight: { def: number; min: number; max: number };
   pins: number | null;
-  /** Player-controlled muscles, most important first (the first 4 / 6 / 9 become the lanes). */
+  /** Player-controlled muscles, most important first (the first 4 / 6 / 8 / 9 become the lanes). */
   lanes: MuscleId[];
   sections: Section[];
   build(barMass: number, spb: number): ExercisePlan;

@@ -8,7 +8,7 @@ import { MUSCLES, MI } from '../src/sim/muscles.ts';
 const args = process.argv.slice(2);
 const only = args.find((a) => !a.startsWith('-'));
 const bpm = Number(args.find((a) => a.startsWith('-bpm='))?.slice(5) ?? 84);
-const diffs: Difficulty[] = ['easy', 'normal', 'expert'];
+const diffs: Difficulty[] = ['easy', 'normal', 'hard', 'expert'];
 
 for (const ex of EXERCISES) {
   if (only && ex.id !== only) continue;
